@@ -1,0 +1,161 @@
+--- 
+title: "The Evolution of the 3-Point Shot"
+output: html_document
+---
+
+<h2>Overview</h2>
+
+The three-point line was adopted by the NBA during the 1979-80 season. Since then, the 3-point shot has continued to increase in importance and is now an integral part of the game. The new age of analytics in the NBA has also driven some extreme strategic behavior with regard to the 3-point shot. Look no further than the Houston Rockets to understand this change. Driven by stats-nerd GM Daryl Morey, the Rockets have looked to eliminate mid-range shots from their repetoire (http://es.pn/1erBBfi). This analysis will look at the 3-point shot as it has progressed in the 35 years since its introduction.
+
+<img src ="http://static.foxsports.com/content/fscom/img/2013/02/13/021213-6-NBA-Rockets-guard-James-Harden-OB-PI_20130213022223353_660_320.JPG">
+
+
+```{r,message=F,warning=F}
+#load libraries
+library(ggplot2)
+library(ggthemes)
+library(dplyr)
+library(reshape2)
+library(knitr)
+
+#set directory to where csv files are located
+setwd("/Users/pingelmo/Dropbox/data/nba/teams")
+#initialize data frame
+nba <- data.frame()
+#assign files to list
+files_list <- list.files()
+#read in csv and row bind into one data frame
+for(file in files_list){nba<-rbind(nba,read.table(file,header=T,sep=",",skip=2,stringsAsFactors=F))}
+#remove rows not containing team data
+nba <- nba[!nba$Season=="Season",]
+rownames(nba) <- NULL
+# convert characters to numeric
+nba[,c(1,5:40)] <- sapply(nba[,c(1,5:40)],as.numeric)
+#convert character to factor
+nba$Season <- as.factor(nba$Season)
+#remove asterisk from Team Name
+nba$Tm <- substr(nba[,3],1,3)
+#season end
+nba$season_end <- as.numeric(substr(nba[,2],1,4))+1
+options("scipen"=100, "digits"=4)
+
+#load NBA champions data
+finals <- read.csv("/Users/pingelmo/Dropbox/data/nba/finals.csv",header=T)
+#create new binary championship variable
+finals$finals <- 1
+#rename to match NBA dataset
+names(finals) <- c("Season","Tm","finals")
+#join
+nba <- left_join(nba,finals)
+#remove NAs
+nba$finals <- ifelse(is.na(nba$finals),0,1)
+
+#rename fields
+names(nba)[8] <- "win_pct"
+names(nba)[33] <- "eFG"
+names(nba)[34] <- "TOV_rate"
+names(nba)[35] <- "ORB_rate"
+names(nba)[36] <- "FT_FGA"
+names(nba)[37] <- "opp_eFG"
+names(nba)[38] <- "opp_TOV"
+names(nba)[39] <- "opp_ORB"
+names(nba)[40] <- "opp_FT_FGA"
+
+
+# get rid of NAs, replace with 0
+nba$X2P <- ifelse(is.na(nba$X2P),0,nba$X2P)
+nba$X2PA <- ifelse(is.na(nba$X2PA),0,nba$X2PA)
+nba$X3P <- ifelse(is.na(nba$X3P),0,nba$X3P)
+nba$X3PA <- ifelse(is.na(nba$X3PA),0,nba$X3PA)
+
+# new variables
+nba$fg_per <- nba$FG/nba$FGA
+nba$x2p_per <- nba$X2P/nba$X2PA
+nba$ft_per <- nba$FT/nba$FTA
+nba$pts_per_fga <- nba$PTS/nba$FGA
+# decade variable
+nba$decade <- cut(nba$season_end,breaks=c(0,1989,1999,2009,2015),labels=c("1980s","1990s","2000s",'2010s'))
+# new 2-pt variables
+nba$x2pa_game <- nba$X2PA/nba$G
+nba$x2p_game <- nba$X2P/nba$G
+nba$x2p_per <- nba$X2P/nba$X2PA
+# new 3-pt variables
+nba$x3pa_game <- nba$X3PA/nba$G
+nba$x3p_game <- nba$X3P/nba$G
+nba$x3p_per <- nba$X3P/nba$X3PA
+nba$x3pa_share <- nba$X3PA/nba$FGA
+#new fga
+nba$fga_game <- nba$FGA/nba$G
+nba$fg_game <- nba$FG/nba$G
+nba$ft_game <- nba$FT/nba$G
+```
+
+<h2>Explore Data</h2>
+
+The NBA is played in a far different way than it was in 1980. Below is a snapshot showing 1980-2015, listing field goal attempts per game, 2-point attempts per game and 3-point attempts per game. Since 1980, field goal attempts per game have dropped from about 91 to 83 but 3-point shots have increased from 3 to just over 22.
+
+```{r,message=F,warning=F}
+# create data frame
+shot_change <- nba %>% filter(season_end %in% c(1980,1990,2000,2010,2015)) %>% group_by(season_end) %>%summarize(FGA_per_game=mean(fga_game),x2PA_per_game=mean(x2pa_game),x3PA_per_game = mean(x3pa_game)) %>% select(season_end,FGA_per_game,x2PA_per_game,x3PA_per_game)
+
+#display contents
+kable(shot_change)
+
+#melt to plot
+shot_change <- melt(shot_change,id="season_end")
+
+#plot
+shot_change %>% ggplot(aes(x=season_end,y=value,group=variable,col=variable))+geom_point(size=4)+geom_line(size=1.5)+ggtitle(expression(atop("Evolution of Shot Selection",atop("3 point attempts per game have increased from 2.7 in 1980 to 22.3 in 2015"))))+theme_fivethirtyeight()+theme(plot.title=element_text(hjust=.5),legend.position="none")+annotate("text",x=1985,y=11,label="3P Attempts",col="blue")+annotate("text",x=1985,y=79,label="2P Attempts",col="dark green")+annotate("text",x=1990,y=95,label="FG Attempts",col="red")
+
+#3 point shooting by decade 
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=x3pa_game,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("3-Point Attempts per Game",atop("Colored by decade"))))
+
+#3 point shooting percentage by decade 
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=x3p_per,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("3-Point Field Goal Percent",atop("2015 League-Wide Average is 34.6%"))))
+```
+
+<h2>League-Wide Trends</h2>
+
+Since 1980, field goal attempts, 2-point attempts, free throw attempts and pace have all decreased, while 3-point attempts have increased. Unsurprisingly, field goal attempts per game mimics pace. NBA pace decreased steadily from 1980 through the early 2000s, as the half-court offense evolved. Pace has started to increase again, possibly as a factor of the 3-point shot.
+
+```{r,message=F,warning=F}
+# Pace
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=Pace,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("Pace per Game",atop("Colored by decade"))))
+
+# Field Goal Attempts per Game
+nba %>% filter(season_end>1980,fga_game<105) %>% ggplot(aes(x=season_end,y=fga_game,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("Field Goal Attempts per Game",atop("Colored by decade"))))
+
+# 2-Point Attempts per Game
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=x2pa_game,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("2 Point Attempts per Game",atop("Colored by decade"))))
+
+# Free Throw Attempts
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=ft_game,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("Free Throw Attempts per Game",atop("Colored by decade"))))
+
+# 3-Point Attempts per Game
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=x3pa_game,col=decade))+geom_point()+geom_smooth(method="lm")+theme_fivethirtyeight()+theme(legend.position="none")+ggtitle(expression(atop("3 Point Attempts per Game",atop("Colored by decade"))))
+
+```
+
+<h2>The more 3-Point shots the better?</h2>
+
+The share of field goal attempts that are 3-point shots has been increasing every year since 1980. This year, almost 27% of a team’s field goal attempts are 3-point shots. And for the first time in NBA history, a team is attempting more than 40% of their shots from 3-point territory. Can you guess who?
+
+```{r,message=F,warning=F}
+# 3 point share by season
+nba %>% filter(season_end>1980) %>% ggplot(aes(x=season_end,y=x3pa_share,col=decade))+geom_smooth()+geom_point()+theme_fivethirtyeight()+ggtitle("Percent of Shots that are 3-Pointers")+theme(legend.position="none")
+```
+
+<h2>Future of NBA?</h2>
+If you guessed the Houston Rockets, then you’d be correct. The Rockets have paced well above league average for the percent of shots that are 3-pointers.
+
+
+```{r,message=F,warning=F}
+# Rockets
+HOU <- nba %>% filter(season_end>2000)
+HOU$HOU <- ifelse(HOU$Tm=="HOU",1,0)
+
+HOU %>% ggplot(aes(x=season_end,y=x3pa_share,size=HOU,col=HOU))+geom_point()+geom_smooth()+theme_fivethirtyeight()+theme(legend.position="none",plot.title=element_text(size=rel(1.6),hjust=0))+scale_size_continuous(range=c(2,5))+ggtitle(expression(atop("Percent of Shots that are 3-Pointers",atop("Houston Rockets are blue dots"))))
+
+```
+
+<img src="https://espngrantland.files.wordpress.com/2015/01/rocketschart1152.jpg">
